@@ -27,7 +27,7 @@ services:
   # MINIO - S3 Compatible Object Storage
   # ==========================================
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: ${USER}_monitoring-minio
     command: server /data --console-address ":9001"
     environment:
@@ -50,7 +50,7 @@ services:
   # MINIO INITIALIZATION
   # ==========================================
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     container_name: ${USER}_monitoring-minio-init
     depends_on:
       minio:
@@ -119,7 +119,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - MLFLOW_TRACKING_URI=http://mlflow:5001
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
       - MODEL_NAME=wine_quality_model
       - MODEL_STAGE=Production
       - AWS_ACCESS_KEY_ID=minio
@@ -154,11 +154,34 @@ services:
       - '--web.console.templates=/usr/share/prometheus/consoles'
     volumes:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     ports:
       - "9090:9090"
     depends_on:
       - api
+      - alertmanager
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # ==========================================
+  # ALERTMANAGER
+  # ==========================================
+  alertmanager:
+    image: prom/alertmanager:v0.34.1
+    container_name: ${USER}_monitoring-alertmanager
+    entrypoint: ["/bin/sh", "/etc/alertmanager/start.sh"]
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - ./config/alertmanager/start.sh:/etc/alertmanager/start.sh:ro
+      - alertmanager_data:/alertmanager
+    tmpfs:
+      - /tmp:mode=1777
+    ports:
+      - "127.0.0.1:9093:9093"
     networks:
       - monitoring
     restart: unless-stopped
@@ -276,6 +299,9 @@ services:
 # VOLUMES
 # ==========================================
 volumes:
+  alertmanager_data:
+    driver: local
+    name: ${USER}_monitoring-alertmanager_data
   postgres_data:
     driver: local
     name: ${USER}_monitoring-postgres_data

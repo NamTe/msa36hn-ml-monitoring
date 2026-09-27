@@ -1,0 +1,109 @@
+rule_files:
+- ../config/prometheus/traffic_alerts.yml
+evaluation_interval: 5s
+tests:
+- name: steady 2 RPS
+  interval: 5s
+  input_series:
+  - series: api_requests_total{job="model-api",method="POST",endpoint="/predict",status="200"}
+    values: 0+10x36
+  alert_rule_test:
+  - eval_time: 3m
+    alertname: BurstTraffic
+    exp_alerts: []
+- name: exactly threshold
+  interval: 5s
+  input_series:
+  - series: api_requests_total{job="model-api",method="POST",endpoint="/predict",status="200"}
+    values: 0+25x36
+  alert_rule_test:
+  - eval_time: 3m
+    alertname: BurstTraffic
+    exp_alerts: []
+- name: pending firing recovery
+  interval: 5s
+  input_series:
+  - series: api_requests_total{job="model-api",method="POST",endpoint="/predict",status="200"}
+    values: 0+50x12 600+0x24
+  alert_rule_test:
+  - eval_time: 10s
+    alertname: BurstTraffic
+    exp_alerts: []
+  - eval_time: 45s
+    alertname: BurstTraffic
+    exp_alerts:
+    - &id001
+      exp_labels:
+        severity: warning
+        service: model-api
+      exp_annotations:
+        summary: Prediction traffic burst
+        description: POST /predict exceeded 5 requests/s over 30s for at least 15s.
+        rate: '10.00'
+  - eval_time: 3m
+    alertname: BurstTraffic
+    exp_alerts: []
+- name: brief spike
+  interval: 5s
+  input_series:
+  - series: api_requests_total{job="model-api",method="POST",endpoint="/predict",status="200"}
+    values: 0+0x12 80+0x3 160+0x20
+  alert_rule_test:
+  - eval_time: 85s
+    alertname: BurstTraffic
+    exp_alerts: []
+  - eval_time: 90s
+    alertname: BurstTraffic
+    exp_alerts: []
+  - eval_time: 100s
+    alertname: BurstTraffic
+    exp_alerts: []
+  - eval_time: 3m
+    alertname: BurstTraffic
+    exp_alerts: []
+  promql_expr_test:
+  - expr: ALERTS{alertname="BurstTraffic",alertstate="pending"}
+    eval_time: 85s
+    exp_samples:
+    - labels: ALERTS{alertname="BurstTraffic",alertstate="pending",service="model-api",severity="warning"}
+      value: 1
+- name: counter reset
+  interval: 5s
+  input_series:
+  - series: api_requests_total{job="model-api",method="POST",endpoint="/predict",status="200"}
+    values: 0+10x12 0+10x24
+  alert_rule_test:
+  - eval_time: 70s
+    alertname: BurstTraffic
+    exp_alerts: []
+  - eval_time: 90s
+    alertname: BurstTraffic
+    exp_alerts: []
+  - eval_time: 3m
+    alertname: BurstTraffic
+    exp_alerts: []
+- name: excluded endpoints and methods
+  interval: 5s
+  input_series:
+  - series: api_requests_total{job="model-api",method="GET",endpoint="/predict",status="200"}
+    values: 0+100x36
+  - series: api_requests_total{job="model-api",method="POST",endpoint="/metrics",status="200"}
+    values: 0+100x36
+  - series: api_requests_total{job="model-api",method="POST",endpoint="/health",status="200"}
+    values: 0+100x36
+  alert_rule_test:
+  - eval_time: 3m
+    alertname: BurstTraffic
+    exp_alerts: []
+- name: aggregate success and error traffic
+  interval: 5s
+  input_series:
+  - series: api_requests_total{job="model-api",method="POST",endpoint="/predict",status="200"}
+    values: 0+25x36
+  - series: api_requests_total{job="model-api",method="POST",endpoint="/predict",status="500"}
+    values: 0+25x36
+  alert_rule_test:
+  - eval_time: 1m
+    alertname: BurstTraffic
+    exp_alerts:
+    - *id001

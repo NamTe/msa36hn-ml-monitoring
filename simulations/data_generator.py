@@ -3,18 +3,18 @@
 DATA GENERATOR
 ============================================
 
-Generate realistic wine quality data with configurable drift
+Generate sklearn wine classification inputs with configurable drift
 """
 
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional
 import yaml
-from pathlib import Path
+from sklearn.datasets import load_wine
 
 
 class WineDataGenerator:
-    """Generate wine quality prediction data"""
+    """Generate inputs matching the wine classifier in scripts/training.py."""
     
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize data generator with config"""
@@ -22,11 +22,12 @@ class WineDataGenerator:
             self.config = yaml.safe_load(f)
         
         self.features = self.config['features']
-        self.feature_names = list(self.features.keys())
-        
-        # Remove 'quality' as it's the target
-        if 'quality' in self.feature_names:
-            self.feature_names.remove('quality')
+        # The API sends positional arrays, so always use the training order.
+        self.feature_names = list(load_wine().feature_names)
+        if set(self.features) != set(self.feature_names):
+            raise ValueError(
+                "Configured features must match the 13 sklearn load_wine features"
+            )
     
     def generate_normal_sample(self) -> Dict[str, float]:
         """Generate a single normal sample"""
@@ -162,4 +163,3 @@ if __name__ == "__main__":
     print("\nGenerating batch...")
     df = gen.generate_dataframe(n_samples=10, scenario="moderate_drift")
     print(df.describe())
-

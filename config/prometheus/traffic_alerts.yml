@@ -1,0 +1,14 @@
+groups:
+  - name: traffic_alerts
+    interval: 5s
+    rules:
+      - alert: BurstTraffic
+        expr: sum(rate(api_requests_total{job="model-api", method="POST", endpoint="/predict"}[30s])) > 5
+        for: 15s
+        labels:
+          severity: warning
+          service: model-api
+        annotations:
+          summary: Prediction traffic burst
+          description: 'POST /predict exceeded 5 requests/s over 30s for at least 15s.'
+          rate: '{{ printf "%.2f" $value }}'

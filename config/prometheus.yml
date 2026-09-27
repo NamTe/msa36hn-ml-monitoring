@@ -11,17 +11,16 @@ global:
     cluster: 'production'
     env: 'ml-monitoring'
 
-# Alertmanager configuration (optional)
-# alerting:
-#   alertmanagers:
-#     - static_configs:
-#         - targets:
-#           - alertmanager:9093
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
 
 # Load rules once and periodically evaluate them
 rule_files:
   # - "alerts.yml"
-  - "evidently_alerts.yml"  # Evidently AI drift detection alerts
+  - "rules/evidently_alerts.yml"
+  - "rules/traffic_alerts.yml"
 
 # Scrape configurations
 scrape_configs:

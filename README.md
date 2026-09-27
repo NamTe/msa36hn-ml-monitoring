@@ -89,6 +89,42 @@ This project demonstrates a complete MLOps pipeline with real-time monitoring fo
 | **MinIO Console** | 9001 | MinIO web interface |
 | **PostgreSQL** | 5432 | MLFlow backend database |
 
+### Evidence Screenshots
+
+The screenshots below show the model registry, monitoring dashboards, alert rules,
+and Telegram notifications captured during the demo.
+
+#### MLflow Model Registry
+
+Registered versions of the `wine_quality_model` model.
+
+![MLflow registry showing wine_quality_model versions 1 and 2](screenshot/mlflow.png)
+
+#### Model Monitoring Dashboard
+
+Grafana displays request throughput, error rate, prediction rate, and latency.
+
+![Grafana ML model dashboard showing traffic and prediction metrics](screenshot/grafana_ml_model.png)
+
+#### Evidently Drift Dashboard
+
+Grafana displays the reported drift status, drift score, and analysis history.
+
+![Grafana Evidently dashboard showing drift detected and a 66.7 percent drift score](screenshot/grafana_evidently.png)
+
+#### Prometheus Alert Rules
+
+Grafana lists the Prometheus rule groups for Evidently monitoring and burst traffic.
+
+![Grafana alert rules view listing Evidently and traffic alert groups](screenshot/alert_rule.png)
+
+#### Telegram Notifications
+
+Telegram receives firing notifications for data drift and burst traffic, followed
+by a recovery notification when the burst condition clears.
+
+![Telegram chat showing DataDriftDetected and BurstTraffic alerts and burst recovery](screenshot/telegram.png)
+
 ---
 
 ## Features
@@ -520,7 +556,60 @@ Examples:
 - `HighMissingValues` – missing-values ratio > 20%
 - `SlowDriftAnalysis` – analysis taking too long
 
-These alerts can be wired to Alertmanager / Slack / email as needed.
+These rules are loaded by Prometheus. All alerts sent to Alertmanager are
+routed to Telegram, including Evidently drift, data quality, and service alerts.
+Notifications include the alert name, severity, available service/instance labels,
+and firing details. Recovery messages identify the condition that cleared.
+
+### Burst traffic notifications to Telegram
+
+Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the project-root `.env`.
+Use the existing bot and chat (group chat IDs can be negative). The bot must
+be allowed to send messages to that chat. Do not commit the token.
+
+```bash
+docker compose up -d --no-deps alertmanager prometheus
+docker compose config --quiet
+docker compose run --rm --no-deps alertmanager --check
+docker compose exec prometheus promtool check config /etc/prometheus/prometheus.yml
+```
+
+The API must already be running. Compose passes the Telegram settings to
+Alertmanager, whose startup script validates them and renders a private config
+in container memory. No host `secrets` folder is needed. After changing `.env`,
+recreate Alertmanager with `docker compose up -d --no-deps --force-recreate alertmanager`.
+Avoid printing `docker compose config` without `--quiet`, as it includes credentials.
+
+`BurstTraffic` counts all completed `POST /predict` requests, including errors.
+It fires above **5 requests/s over 30 seconds**, sustained for **15 seconds**.
+Health and metrics requests are excluded. Rules evaluate every 5 seconds;
+API metrics are scraped every 10 seconds. Telegram receives a firing message,
+a recovery message, and reminders every 15 minutes while a burst persists.
+
+Allow at least 20 seconds for API scrapes, then run in the simulation environment:
+
+```bash
+cd simulations
+python run_simulation.py -p burst -s normal
+```
+
+The burst targets 10 requests/s for 600 requests. Actual throughput is lower
+because requests and capture calls run sequentially; it must exceed 5 requests/s
+to fire. Steady traffic at 2 requests/s should not alert. Delivery and recovery
+include scrape, evaluation, and notification delays.
+
+Inspect [Prometheus alerts](http://localhost:9090/alerts) and
+[Alertmanager](http://localhost:9093). Telegram delivery attempts and failures
+are exposed as `alertmanager_notifications_total` and
+`alertmanager_notifications_failed_total` at `http://localhost:9093/metrics`.
+Alertmanager notification state is persisted in its named volume.
+
+Run the rule regression checks from the project root:
+
+```bash
+docker run --rm --entrypoint /bin/promtool -v "$PWD:/workspace:ro" -w /workspace prom/prometheus:latest test rules tests/traffic_alerts.test.yml
+python tests/test_alertmanager_start.py
+```
 
 ---
 
